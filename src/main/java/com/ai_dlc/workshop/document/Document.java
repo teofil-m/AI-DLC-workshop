@@ -15,18 +15,23 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 /**
  * JPA entity representing an uploaded document awaiting or having completed RAG ingestion.
+ * equals/hashCode keyed on id only — avoids the Hibernate @Data anti-pattern.
  */
 @Entity
 @Table(name = "documents")
-@Data
+@Getter
+@Setter
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@EqualsAndHashCode(onlyExplicitlyIncluded = true)
 public class Document {
 
     public enum DocumentStatus {
@@ -38,6 +43,7 @@ public class Document {
 
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
+    @EqualsAndHashCode.Include
     private UUID id;
 
     @Column(nullable = false)
