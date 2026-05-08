@@ -11,12 +11,14 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.ai_dlc.workshop.ai.IngestionService;
+
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Service encapsulating all business logic for document upload and persistence.
- * No embedding, vector store, or AI operations happen here (deferred to later slices).
+ * Service encapsulating all business logic for document upload, persistence,
+ * and triggering RAG ingestion via {@link IngestionService}.
  */
 @Service
 @RequiredArgsConstructor
@@ -29,14 +31,26 @@ public class DocumentService {
     private static final Pattern SAFE_FILENAME = Pattern.compile("[^a-zA-Z0-9.\\-_ ]");
 
     private final DocumentRepository documentRepository;
+    private final IngestionService ingestionService;
 
     /**
-     * Validates and persists an uploaded file.
-     * Validation order: empty → MIME type → declared size (cheapest checks first).
+     * Validates, persists, and ingests an uploaded file.
+     *
+     * <p>Validation order: empty → MIME type → declared size (cheapest checks first).
      * Actual byte length is re-checked after reading to catch Content-Length spoofing.
+     *
+     * <p>After the document is saved with {@code PENDING_INGEST}, the {@link IngestionService}
+     * is called synchronously to chunk, embed, and write to the vector store.
+     * The {@code @Transactional} boundary ensures the document row is visible to the
+     * ingestion status updates; if ingestion fails the document is saved with
+     * {@code INGEST_FAILED} (not rolled back).
+     *
+     * @param file   the uploaded multipart file
+     * @param userId the {@code sub} claim from the caller's JWT — propagated to chunk metadata
+     * @return a {@link DocumentDto} reflecting the final ingestion status
      */
     @Transactional
-    public DocumentDto upload(MultipartFile file) {
+    public DocumentDto upload(MultipartFile file, String userId) {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File must not be empty");
         }
@@ -78,7 +92,12 @@ public class DocumentService {
                 .rawText(rawText)
                 .build(); // status defaults to PENDING_INGEST via @Builder.Default
 
-        return DocumentDto.from(documentRepository.save(document));
+        Document saved = documentRepository.save(document);
+
+        // Trigger synchronous ingestion — status transitions are managed inside IngestionService
+        ingestionService.ingest(saved, userId);
+
+        return DocumentDto.from(saved);
     }
 
     /**

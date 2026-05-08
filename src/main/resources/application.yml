@@ -61,3 +61,5 @@ app:
     rag:
       top-k: 4
       similarity-threshold: 0.7
+      chunk-size: 800
+      chunk-overlap: 200
