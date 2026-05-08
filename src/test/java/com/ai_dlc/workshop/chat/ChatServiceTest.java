@@ -49,6 +49,7 @@ class ChatServiceTest {
     @BeforeEach
     void setUp() {
         chatService = new ChatService(chatClient, vectorStore);
+        chatService.init(); // @PostConstruct not called by Mockito — invoke explicitly
     }
 
     // -------------------------------------------------------------------------

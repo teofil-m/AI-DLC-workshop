@@ -1,5 +1,7 @@
 package com.ai_dlc.workshop.web;
 
+import java.util.stream.Collectors;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
@@ -22,9 +24,11 @@ public class ProblemDetailControllerAdvice {
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ProblemDetail> handleMethodArgumentNotValid(MethodArgumentNotValidException ex) {
-        log.warn("Bean Validation failed: {}", ex.getMessage());
-        return ResponseEntity.of(ProblemDetail.forStatusAndDetail(
-                HttpStatus.BAD_REQUEST, "Request validation failed")).build();
+        String detail = ex.getBindingResult().getFieldErrors().stream()
+                .map(fe -> fe.getField() + ": " + fe.getDefaultMessage())
+                .collect(Collectors.joining("; "));
+        log.warn("Bean Validation failed: {}", detail);
+        return ResponseEntity.of(ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, detail)).build();
     }
 
     @ExceptionHandler(ResponseStatusException.class)

@@ -1,6 +1,7 @@
 package com.ai_dlc.workshop.chat;
 
 import com.ai_dlc.workshop.common.MetadataKeys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.client.ChatClient;
@@ -15,14 +16,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.stream.Collectors;
 
 /**
  * Synchronous RAG chat service.
  *
  * <p>Pipeline:
  * <ol>
- *   <li>Retrieve top-K documents from the {@link VectorStore} via similarity search.</li>
+ *   <li>Retrieve top-K document chunks scoped to the authenticated user from {@link VectorStore}.</li>
  *   <li>Format retrieved chunks into a context block.</li>
  *   <li>Render the {@code rag-chat.st} prompt template with {question} and {context}.</li>
  *   <li>Call the LLM via {@link ChatClient} and return the answer with citations.</li>
@@ -47,26 +47,34 @@ public class ChatService {
     @Value("${app.ai.rag.similarity-threshold:0.7}")
     private double similarityThreshold;
 
+    // Loaded once at startup — template never changes at runtime
+    private String promptTemplate;
+
+    @PostConstruct
+    void init() {
+        this.promptTemplate = loadPromptTemplate();
+    }
+
     /**
-     * Answers {@code question} using RAG: retrieves relevant chunks and calls the LLM
-     * with the assembled context.
+     * Answers {@code question} using RAG: retrieves the caller's relevant chunks and calls the LLM.
      *
      * @param question sanitised user question (must not be blank)
-     * @param userId   the authenticated user's subject claim
+     * @param userId   the authenticated user's subject claim — scopes the vector store search
      * @return the generated answer together with citation metadata
      */
     public ChatResponse chat(String question, String userId) {
         log.debug("RAG chat request received for userId={}", userId);
 
-        // 1. Retrieve relevant documents from the vector store
+        // 1. Retrieve relevant documents scoped to this user — prevents cross-user data leakage
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(question)
                 .topK(topK)
                 .similarityThreshold(similarityThreshold)
+                .filterExpression(MetadataKeys.USER_ID + " == '" + userId + "'")
                 .build();
 
         List<Document> relevantDocs = vectorStore.similaritySearch(searchRequest);
-        log.debug("Retrieved {} document chunks from vector store", relevantDocs.size());
+        log.debug("Retrieved {} document chunks from vector store for userId={}", relevantDocs.size(), userId);
 
         // 2. Build context string from retrieved chunks
         String context = relevantDocs.isEmpty()
@@ -74,24 +82,25 @@ public class ChatService {
                 : relevantDocs.stream()
                         .map(Document::getText)
                         .filter(Objects::nonNull)
-                        .collect(Collectors.joining("\n\n---\n\n"));
+                        .collect(java.util.stream.Collectors.joining("\n\n---\n\n"));
 
-        // 3. Load and render prompt template (string substitution — not an interpreter)
-        String promptTemplate = loadPromptTemplate();
+        // 3. Render prompt — substitute {context} first so any literal "{question}" in chunk
+        //    text is never matched by the second replacement
         String renderedPrompt = promptTemplate
-                .replace("{question}", sanitise(question))
-                .replace("{context}", context);
+                .replace("{context}", context)
+                .replace("{question}", sanitise(question));
 
-        // 4. Call the LLM synchronously
-        String answer = chatClient.prompt()
+        // 4. Call the LLM synchronously; guard against content-filtered null response
+        String raw = chatClient.prompt()
                 .user(renderedPrompt)
                 .call()
                 .content();
+        String answer = raw != null ? raw : "";
 
         // 5. Map retrieved documents to CitationDtos
         List<CitationDto> citations = relevantDocs.stream()
                 .map(doc -> toCitation(doc.getMetadata()))
-                .collect(Collectors.toList());
+                .toList();
 
         return new ChatResponse(answer, citations);
     }
@@ -118,9 +127,10 @@ public class ChatService {
     }
 
     /**
-     * Minimal prompt-injection defence: strips null bytes and trims surrounding whitespace.
-     * The template rendering uses plain {@link String#replace}, not a template engine,
-     * so placeholder-in-input injection ({@code {context}} in user input) is not possible.
+     * Minimal prompt-injection defence: strips null and trims surrounding whitespace.
+     * Placeholder re-injection from user input is impossible because {context} is
+     * substituted before {question} — stored chunk text containing "{question}" cannot
+     * reach the question substitution site.
      */
     private static String sanitise(String input) {
         if (input == null) {

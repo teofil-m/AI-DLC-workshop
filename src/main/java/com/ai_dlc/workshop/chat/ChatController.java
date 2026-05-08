@@ -41,6 +41,9 @@ public class ChatController {
             @Valid @RequestBody ChatRequest request,
             @AuthenticationPrincipal Jwt jwt) {
 
+        if (jwt == null) {
+            throw new ResponseStatusException(BAD_REQUEST, "JWT must contain a sub claim");
+        }
         String userId = jwt.getSubject();
         if (userId == null || userId.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "JWT must contain a sub claim");
