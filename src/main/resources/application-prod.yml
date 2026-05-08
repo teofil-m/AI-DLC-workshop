@@ -1,0 +1,30 @@
+spring:
+  datasource:
+    url: ${DATABASE_URL}
+    username: ${DATABASE_USERNAME}
+    password: ${DATABASE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+  ai:
+    azure:
+      openai:
+        endpoint: ${AZURE_OPENAI_ENDPOINT}
+        api-key: ${AZURE_OPENAI_API_KEY}
+        chat:
+          options:
+            deployment-name: ${AZURE_OPENAI_CHAT_DEPLOYMENT}
+            temperature: 0.2
+        embedding:
+          options:
+            deployment-name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+    vectorstore:
+      azure:
+        url: ${AZURE_AI_SEARCH_ENDPOINT}
+        api-key: ${AZURE_AI_SEARCH_API_KEY}
+        index-name: ${AZURE_AI_SEARCH_INDEX}
+
+app:
+  profile-mode: prod

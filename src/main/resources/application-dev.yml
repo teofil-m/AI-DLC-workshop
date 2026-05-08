@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:aidlc;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  ai:
+    azure:
+      openai:
+        endpoint: ${AZURE_OPENAI_ENDPOINT:}
+        api-key: ${AZURE_OPENAI_API_KEY:}
+        chat:
+          options:
+            deployment-name: ${AZURE_OPENAI_CHAT_DEPLOYMENT:gpt-5-4}
+        embedding:
+          options:
+            deployment-name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:text-embedding-3-small}
+    vectorstore:
+      azure:
+        url: ${AZURE_AI_SEARCH_ENDPOINT:}
+        api-key: ${AZURE_AI_SEARCH_API_KEY:}
+        index-name: ${AZURE_AI_SEARCH_INDEX:ai-dlc-dev}
+
+app:
+  profile-mode: dev
