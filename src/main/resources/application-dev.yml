@@ -8,17 +8,19 @@ spring:
     console:
       enabled: true
       path: /h2-console
+  flyway:
+    baseline-on-migrate: true
   ai:
-    azure:
-      openai:
-        endpoint: ${AZURE_OPENAI_ENDPOINT:}
-        api-key: ${AZURE_OPENAI_API_KEY:}
-        chat:
-          options:
-            deployment-name: ${AZURE_OPENAI_CHAT_DEPLOYMENT:gpt-5-4}
-        embedding:
-          options:
-            deployment-name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:text-embedding-3-small}
+    # Azure AI Foundry exposes an OpenAI-compatible endpoint — use spring.ai.openai.* with base-url override.
+    openai:
+      api-key: ${AZURE_OPENAI_API_KEY:}
+      base-url: ${AZURE_OPENAI_ENDPOINT:}
+      chat:
+        options:
+          model: ${AZURE_OPENAI_CHAT_DEPLOYMENT:CONFIGURE_ME}
+      embedding:
+        options:
+          model: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:text-embedding-3-small}
     vectorstore:
       azure:
         url: ${AZURE_AI_SEARCH_ENDPOINT:}
@@ -27,3 +29,6 @@ spring:
 
 app:
   profile-mode: dev
+  security:
+    jwt:
+      issuer-uri: ${JWT_ISSUER_URI:}

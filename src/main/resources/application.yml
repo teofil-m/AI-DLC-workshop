@@ -3,6 +3,10 @@ spring:
     name: ai-dlc-workshop
   profiles:
     default: dev
+  main:
+    # Explicit servlet stack — WebFlux is on the classpath for reactive streaming only.
+    # Without this Spring Boot may auto-detect the wrong application type.
+    web-application-type: servlet
   jpa:
     hibernate:
       ddl-auto: validate
@@ -12,7 +16,6 @@ spring:
         jdbc.time_zone: UTC
   flyway:
     enabled: true
-    baseline-on-migrate: true
     locations: classpath:db/migration
   threads:
     virtual:
@@ -45,8 +48,8 @@ logging:
 app:
   security:
     jwt:
-      issuer-uri: ${JWT_ISSUER_URI:}
       audience: ${JWT_AUDIENCE:ai-dlc-workshop}
+      # issuer-uri is profile-specific: required in prod (no default), optional in dev/test
   ai:
     embedding:
       dimensions: 1536

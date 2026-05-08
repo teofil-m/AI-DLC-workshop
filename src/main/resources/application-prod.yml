@@ -9,17 +9,16 @@ spring:
       minimum-idle: 5
       connection-timeout: 30000
   ai:
-    azure:
-      openai:
-        endpoint: ${AZURE_OPENAI_ENDPOINT}
-        api-key: ${AZURE_OPENAI_API_KEY}
-        chat:
-          options:
-            deployment-name: ${AZURE_OPENAI_CHAT_DEPLOYMENT}
-            temperature: 0.2
-        embedding:
-          options:
-            deployment-name: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
+    openai:
+      api-key: ${AZURE_OPENAI_API_KEY}
+      base-url: ${AZURE_OPENAI_ENDPOINT}
+      chat:
+        options:
+          model: ${AZURE_OPENAI_CHAT_DEPLOYMENT}
+          temperature: 0.2
+      embedding:
+        options:
+          model: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT}
     vectorstore:
       azure:
         url: ${AZURE_AI_SEARCH_ENDPOINT}
@@ -28,3 +27,7 @@ spring:
 
 app:
   profile-mode: prod
+  security:
+    jwt:
+      # Required — no default. Missing this env var causes a startup failure (fail-fast).
+      issuer-uri: ${JWT_ISSUER_URI}

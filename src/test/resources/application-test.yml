@@ -6,20 +6,30 @@ spring:
     password: ""
   jpa:
     hibernate:
+      # Tests manage schema directly; Flyway is disabled to isolate migration concerns.
+      # Schema drift vs production is an accepted risk — tightened per slice as migrations accumulate.
       ddl-auto: create-drop
   flyway:
     enabled: false
   ai:
-    azure:
-      openai:
-        endpoint: http://localhost:0
+    openai:
+      api-key: test
+      base-url: http://localhost:0
+      chat:
+        options:
+          model: test-chat
+      embedding:
+        options:
+          model: test-embedding
+    vectorstore:
+      azure:
+        url: http://localhost:0
         api-key: test
-        chat:
-          options:
-            deployment-name: test-chat
-        embedding:
-          options:
-            deployment-name: test-embedding
+        index-name: test-index
+        initialize-schema: false
 
 app:
   profile-mode: test
+  security:
+    jwt:
+      issuer-uri: ""
