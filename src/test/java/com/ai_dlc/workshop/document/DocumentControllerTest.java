@@ -126,4 +126,24 @@ class DocumentControllerTest {
         mockMvc.perform(multipart("/api/documents").file(file).with(csrf()))
                 .andExpect(status().is(Matchers.either(Matchers.is(401)).or(Matchers.is(403))));
     }
+
+    // ---------------------------------------------------------------------------
+    // Ingestion failure — service propagates RuntimeException → 500
+    // ---------------------------------------------------------------------------
+
+    @Test
+    void upload_ingestionFailure_returns500() throws Exception {
+        // GIVEN the embedding service is unavailable and upload throws
+        given(documentService.upload(any(), any()))
+                .willThrow(new RuntimeException("embedding service unavailable"));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "doc.txt", "text/plain", "content".getBytes());
+
+        // WHEN POST /api/documents with a valid JWT
+        // THEN ProblemDetailControllerAdvice returns 500 with a generic message
+        mockMvc.perform(multipart("/api/documents").file(file)
+                        .with(jwt().jwt(j -> j.subject("user-123"))).with(csrf()))
+                .andExpect(status().isInternalServerError());
+    }
 }

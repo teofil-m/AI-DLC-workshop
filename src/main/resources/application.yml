@@ -62,4 +62,4 @@ app:
       top-k: 4
       similarity-threshold: 0.7
       chunk-size: 800
-      chunk-overlap: 200
+      min-chunk-size-chars: 200

@@ -64,4 +64,7 @@ public class Document {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private DocumentStatus status = DocumentStatus.PENDING_INGEST;
+
+    @Column(columnDefinition = "TEXT")
+    private String errorMessage;
 }

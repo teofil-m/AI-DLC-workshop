@@ -25,24 +25,25 @@ public class AiConfig {
     @Value("${app.ai.rag.chunk-size:800}")
     private int chunkSize;
 
-    @Value("${app.ai.rag.chunk-overlap:200}")
-    private int chunkOverlap;
+    // Minimum character length a chunk must have to be sent to the embedding model.
+    // Short trailing chunks below this threshold are discarded rather than embedded.
+    // Note: TokenTextSplitter does not implement sliding-window overlap in M5.
+    @Value("${app.ai.rag.min-chunk-size-chars:200}")
+    private int minChunkSizeChars;
 
     /**
      * Shared text splitter used by {@link IngestionService}.
      * Parameters are tunable via {@code app.ai.rag.chunk-size} and
-     * {@code app.ai.rag.chunk-overlap} in application configuration.
+     * {@code app.ai.rag.min-chunk-size-chars} in application configuration.
      *
      * <p>Uses the builder API to preserve the library's default punctuation marks
      * (required by Spring AI 2.0.0-M5 which asserts the list is non-empty).
-     * The {@code chunkOverlap} maps to {@code minChunkSizeChars} — the minimum
-     * character count that must be preserved when a chunk boundary is selected.
      */
     @Bean
     public TokenTextSplitter tokenTextSplitter() {
         return TokenTextSplitter.builder()
                 .withChunkSize(chunkSize)
-                .withMinChunkSizeChars(chunkOverlap)
+                .withMinChunkSizeChars(minChunkSizeChars)
                 .withMinChunkLengthToEmbed(5)
                 .withMaxNumChunks(10000)
                 .withKeepSeparator(true)

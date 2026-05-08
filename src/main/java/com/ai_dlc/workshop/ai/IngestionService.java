@@ -86,6 +86,7 @@ public class IngestionService {
         } catch (Exception e) {
             log.error("Ingestion failed for document id={}", document.getId(), e);
             document.setStatus(Document.DocumentStatus.INGEST_FAILED);
+            document.setErrorMessage(e.getMessage());
             documentRepository.save(document);
             throw new RuntimeException("Ingestion failed for document " + document.getId(), e);
         }

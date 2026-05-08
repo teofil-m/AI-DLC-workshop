@@ -5,6 +5,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -130,5 +132,37 @@ class DocumentServiceTest {
                     assertThat(rse.getStatusCode().value())
                             .isEqualTo(HttpStatus.BAD_REQUEST.value());
                 });
+    }
+
+    // ---------------------------------------------------------------------------
+    // Ingestion failure path — document row must survive (INGEST_FAILED, not rolled back)
+    // ---------------------------------------------------------------------------
+
+    @Test
+    void upload_ingestionFails_documentRowIsNotLost() {
+        // GIVEN a valid file whose ingestion throws a RuntimeException
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "doc.txt", "text/plain", "content".getBytes());
+
+        Document savedDocument = Document.builder()
+                .id(java.util.UUID.randomUUID())
+                .filename("doc.txt")
+                .contentType("text/plain")
+                .sizeBytes(7L)
+                .rawText("content")
+                .status(DocumentStatus.INGEST_FAILED)
+                .build();
+        savedDocument.setCreatedAt(java.time.Instant.now());
+
+        given(documentRepository.save(any(Document.class))).willReturn(savedDocument);
+        doThrow(new RuntimeException("embedding service unavailable"))
+                .when(ingestionService).ingest(any(Document.class), any(String.class));
+
+        // WHEN / THEN — exception propagates but the repository save was already called
+        assertThatThrownBy(() -> documentService.upload(file, TEST_USER_ID))
+                .isInstanceOf(RuntimeException.class);
+
+        // The document was persisted before ingest() was called — save must have been invoked
+        verify(documentRepository).save(any(Document.class));
     }
 }

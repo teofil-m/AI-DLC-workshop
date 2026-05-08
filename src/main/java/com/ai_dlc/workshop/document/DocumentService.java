@@ -7,7 +7,6 @@ import java.util.regex.Pattern;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -41,15 +40,14 @@ public class DocumentService {
      *
      * <p>After the document is saved with {@code PENDING_INGEST}, the {@link IngestionService}
      * is called synchronously to chunk, embed, and write to the vector store.
-     * The {@code @Transactional} boundary ensures the document row is visible to the
-     * ingestion status updates; if ingestion fails the document is saved with
-     * {@code INGEST_FAILED} (not rolled back).
+     * This method is intentionally NOT {@code @Transactional}: {@code documentRepository.save()}
+     * commits in its own Spring Data JPA transaction before {@code ingest()} is called.
+     * If ingestion fails, the document row remains with {@code INGEST_FAILED} status (not rolled back).
      *
      * @param file   the uploaded multipart file
      * @param userId the {@code sub} claim from the caller's JWT — propagated to chunk metadata
      * @return a {@link DocumentDto} reflecting the final ingestion status
      */
-    @Transactional
     public DocumentDto upload(MultipartFile file, String userId) {
         if (file == null || file.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File must not be empty");

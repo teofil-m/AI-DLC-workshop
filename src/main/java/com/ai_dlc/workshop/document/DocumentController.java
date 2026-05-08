@@ -3,6 +3,7 @@ package com.ai_dlc.workshop.document;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,7 +44,11 @@ public class DocumentController {
             @RequestParam("file") MultipartFile file,
             @AuthenticationPrincipal Jwt jwt) {
         String userId = jwt.getSubject();
-        log.debug("Received document upload request, originalFilename={}", file.getOriginalFilename());
+        if (userId == null || userId.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "JWT must contain a sub claim");
+        }
+        // Log the sanitised filename only — raw client values may contain log-injection characters
+        log.debug("Received document upload request, originalFilename={}", DocumentService.sanitiseFilename(file.getOriginalFilename()));
         DocumentDto dto = documentService.upload(file, userId);
         return ResponseEntity.status(HttpStatus.CREATED).body(dto);
     }
