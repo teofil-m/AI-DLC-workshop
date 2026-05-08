@@ -1,2 +1,3 @@
--- baseline migration; entity tables added in subsequent slices
+-- Slice 0 baseline: empty schema — subsequent migrations add tables.
+-- Flyway requires at least one migration file to initialise its schema history.
 SELECT 1;

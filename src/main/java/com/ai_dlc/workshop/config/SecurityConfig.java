@@ -9,6 +9,11 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 
+/**
+ * Foundation security configuration — stateless JWT chain.
+ * Slice 0: permits actuator/health; all other paths require authentication.
+ * JWT resource-server wiring is added in Slice 1.
+ */
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
