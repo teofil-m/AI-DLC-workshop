@@ -32,10 +32,21 @@ public class AiConfig {
      * Shared text splitter used by {@link IngestionService}.
      * Parameters are tunable via {@code app.ai.rag.chunk-size} and
      * {@code app.ai.rag.chunk-overlap} in application configuration.
+     *
+     * <p>Uses the builder API to preserve the library's default punctuation marks
+     * (required by Spring AI 2.0.0-M5 which asserts the list is non-empty).
+     * The {@code chunkOverlap} maps to {@code minChunkSizeChars} — the minimum
+     * character count that must be preserved when a chunk boundary is selected.
      */
     @Bean
     public TokenTextSplitter tokenTextSplitter() {
-        return new TokenTextSplitter(chunkSize, chunkOverlap, 5, 10000, true);
+        return TokenTextSplitter.builder()
+                .withChunkSize(chunkSize)
+                .withMinChunkSizeChars(chunkOverlap)
+                .withMinChunkLengthToEmbed(5)
+                .withMaxNumChunks(10000)
+                .withKeepSeparator(true)
+                .build();
     }
 
     /**

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.doNothing;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,23 +18,29 @@ import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.ai_dlc.workshop.ai.IngestionService;
 import com.ai_dlc.workshop.document.Document.DocumentStatus;
 
 /**
  * Plain unit test for {@link DocumentService} — no Spring context.
- * The {@link DocumentRepository} is mocked via Mockito.
+ * The {@link DocumentRepository} and {@link IngestionService} are mocked via Mockito.
  */
 @ExtendWith(MockitoExtension.class)
 class DocumentServiceTest {
 
+    private static final String TEST_USER_ID = "user-123";
+
     @Mock
     private DocumentRepository documentRepository;
+
+    @Mock
+    private IngestionService ingestionService;
 
     private DocumentService documentService;
 
     @BeforeEach
     void setUp() {
-        documentService = new DocumentService(documentRepository);
+        documentService = new DocumentService(documentRepository, ingestionService);
     }
 
     // ---------------------------------------------------------------------------
@@ -58,9 +65,10 @@ class DocumentServiceTest {
         savedDocument.setCreatedAt(Instant.now());
 
         given(documentRepository.save(any(Document.class))).willReturn(savedDocument);
+        doNothing().when(ingestionService).ingest(any(Document.class), any(String.class));
 
         // WHEN upload is called
-        DocumentDto result = documentService.upload(file);
+        DocumentDto result = documentService.upload(file, TEST_USER_ID);
 
         // THEN the returned DTO reflects PENDING_INGEST status and correct filename
         assertThat(result.filename()).isEqualTo("doc.txt");
@@ -80,7 +88,7 @@ class DocumentServiceTest {
 
         // WHEN upload is called
         // THEN a ResponseStatusException with 415 is thrown
-        assertThatThrownBy(() -> documentService.upload(file))
+        assertThatThrownBy(() -> documentService.upload(file, TEST_USER_ID))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> {
                     ResponseStatusException rse = (ResponseStatusException) ex;
@@ -98,7 +106,7 @@ class DocumentServiceTest {
 
         // WHEN upload is called
         // THEN a ResponseStatusException with 413 is thrown
-        assertThatThrownBy(() -> documentService.upload(file))
+        assertThatThrownBy(() -> documentService.upload(file, TEST_USER_ID))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> {
                     ResponseStatusException rse = (ResponseStatusException) ex;
@@ -115,7 +123,7 @@ class DocumentServiceTest {
 
         // WHEN upload is called
         // THEN a ResponseStatusException with 400 is thrown
-        assertThatThrownBy(() -> documentService.upload(file))
+        assertThatThrownBy(() -> documentService.upload(file, TEST_USER_ID))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> {
                     ResponseStatusException rse = (ResponseStatusException) ex;
