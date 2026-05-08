@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Synchronous RAG chat service.
@@ -37,6 +38,8 @@ import java.util.Objects;
 public class ChatService {
 
     private static final String PROMPT_TEMPLATE_PATH = "prompts/rag-chat.st";
+    // Allowlist for userId used in filter expression — prevents metadata injection
+    private static final Pattern SAFE_USER_ID = Pattern.compile("[\\w\\-.@]{1,256}");
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
@@ -63,6 +66,9 @@ public class ChatService {
      * @return the generated answer together with citation metadata
      */
     public ChatResponse chat(String question, String userId) {
+        if (!SAFE_USER_ID.matcher(userId).matches()) {
+            throw new IllegalArgumentException("Invalid userId format in JWT sub claim");
+        }
         log.debug("RAG chat request received for userId={}", userId);
 
         // 1. Retrieve relevant documents scoped to this user — prevents cross-user data leakage

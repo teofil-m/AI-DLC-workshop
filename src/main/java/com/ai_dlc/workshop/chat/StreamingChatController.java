@@ -53,6 +53,9 @@ public class StreamingChatController {
         if (question == null || question.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "question must not be blank");
         }
+        if (question.length() > 2000) {
+            throw new ResponseStatusException(BAD_REQUEST, "question must not exceed 2000 characters");
+        }
 
         String userId = jwt.getSubject();
         log.debug("SSE stream request for userId={}", userId);

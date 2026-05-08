@@ -14,8 +14,10 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 /**
  * Non-blocking RAG streaming chat service.
@@ -38,6 +40,8 @@ import java.util.Objects;
 public class StreamingChatService {
 
     private static final String PROMPT_TEMPLATE_PATH = "prompts/rag-chat.st";
+    // Allowlist for userId used in filter expression — prevents metadata injection
+    private static final Pattern SAFE_USER_ID = Pattern.compile("[\\w\\-.@]{1,256}");
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
@@ -68,6 +72,9 @@ public class StreamingChatService {
      * @return a {@link Flux} of token strings; the stream completes when the LLM finishes
      */
     public Flux<String> stream(String question, String userId) {
+        if (!SAFE_USER_ID.matcher(userId).matches()) {
+            throw new IllegalArgumentException("Invalid userId format in JWT sub claim");
+        }
         log.debug("RAG streaming chat request received for userId={}", userId);
 
         // 1. Retrieve relevant documents scoped to this user — prevents cross-user data leakage.
@@ -97,11 +104,17 @@ public class StreamingChatService {
                 .replace("{question}", sanitise(question));
 
         // 4. Call the LLM in streaming mode — returns Flux<String> of token chunks.
-        //    Each emitted String is one or more tokens as produced by the model.
+        //    Timeout bounds runaway connections; onErrorResume signals error to client
+        //    rather than silently dropping the stream mid-response.
         return chatClient.prompt()
                 .user(renderedPrompt)
                 .stream()
-                .content();
+                .content()
+                .timeout(Duration.ofSeconds(60))
+                .onErrorResume(ex -> {
+                    log.error("Streaming LLM call failed for userId={}", userId, ex);
+                    return Flux.just("[ERROR: response generation failed]");
+                });
     }
 
     private String loadPromptTemplate() {
