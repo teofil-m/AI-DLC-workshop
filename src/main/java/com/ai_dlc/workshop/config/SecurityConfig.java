@@ -1,6 +1,7 @@
 package com.ai_dlc.workshop.config;
 
 import java.util.Arrays;
+import java.util.List;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
@@ -16,8 +17,14 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtClaimNames;
+import org.springframework.security.oauth2.jwt.JwtClaimValidator;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
+import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 
@@ -59,16 +66,27 @@ public class SecurityConfig {
      * JwtDecoder used by the OAuth2 resource server filter.
      *
      * If {@code app.security.jwt.issuer-uri} is set (production), the decoder performs
-     * full OIDC issuer validation. If not set (dev/test), a symmetric HMAC-256 decoder
-     * is created using a dev-only key — no external OIDC server is required.
+     * full OIDC issuer validation and enforces the configured audience claim.
+     * If not set (dev/test), a symmetric HMAC-256 decoder is created using a dev-only
+     * key — no external OIDC server is required.
      *
      * NEVER deploy the dev decoder to production. The JWT_ISSUER_URI env var must be
      * set in every production environment.
      */
     @Bean
-    public JwtDecoder jwtDecoder(@Value("${app.security.jwt.issuer-uri:}") String issuerUri) {
+    public JwtDecoder jwtDecoder(
+            @Value("${app.security.jwt.issuer-uri:}") String issuerUri,
+            @Value("${app.security.jwt.audience:}") String audience) {
         if (!issuerUri.isBlank()) {
-            return JwtDecoders.fromIssuerLocation(issuerUri);
+            NimbusJwtDecoder decoder = (NimbusJwtDecoder) JwtDecoders.fromIssuerLocation(issuerUri);
+            if (!audience.isBlank()) {
+                OAuth2TokenValidator<Jwt> audienceValidator = new JwtClaimValidator<>(
+                        JwtClaimNames.AUD,
+                        aud -> aud instanceof List<?> list && list.contains(audience));
+                decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(
+                        JwtValidators.createDefaultWithIssuer(issuerUri), audienceValidator));
+            }
+            return decoder;
         }
         // Dev/test mode: symmetric key — tokens can be minted locally without an OIDC server.
         // Replace with a real issuer-uri for production.

@@ -3,6 +3,7 @@ package com.ai_dlc.workshop.document;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -16,7 +17,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.HttpStatus;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.server.ResponseStatusException;
@@ -42,20 +42,19 @@ class DocumentControllerTest {
     // ---------------------------------------------------------------------------
 
     @Test
-    @WithMockUser
     void upload_validTxtFile_returns201WithDto() throws Exception {
         // GIVEN a valid text/plain file under 2 MB and a mocked service returning PENDING_INGEST
         UUID expectedId = UUID.randomUUID();
         DocumentDto dto = new DocumentDto(
                 expectedId, "test.txt", "text/plain", 100L, "PENDING_INGEST", Instant.now());
-        given(documentService.upload(any())).willReturn(dto);
+        given(documentService.upload(any(), any())).willReturn(dto);
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "test.txt", "text/plain", "hello world".getBytes());
 
-        // WHEN POST /api/documents with valid multipart
+        // WHEN POST /api/documents with valid JWT and multipart
         // THEN 201 Created with body containing id and status = PENDING_INGEST
-        mockMvc.perform(multipart("/api/documents").file(file).with(csrf()))
+        mockMvc.perform(multipart("/api/documents").file(file).with(jwt().jwt(j -> j.subject("user-123"))).with(csrf()))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(expectedId.toString()))
                 .andExpect(jsonPath("$.status").value("PENDING_INGEST"))
@@ -67,51 +66,48 @@ class DocumentControllerTest {
     // ---------------------------------------------------------------------------
 
     @Test
-    @WithMockUser
     void upload_invalidMimeType_returns415() throws Exception {
         // GIVEN service throws 415 for application/pdf content type
-        given(documentService.upload(any()))
+        given(documentService.upload(any(), any()))
                 .willThrow(new ResponseStatusException(HttpStatus.UNSUPPORTED_MEDIA_TYPE));
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "document.pdf", "application/pdf", "%PDF-1.4 content".getBytes());
 
-        // WHEN POST /api/documents with a PDF file
+        // WHEN POST /api/documents with a PDF file and valid JWT
         // THEN 415 Unsupported Media Type
-        mockMvc.perform(multipart("/api/documents").file(file).with(csrf()))
+        mockMvc.perform(multipart("/api/documents").file(file).with(jwt().jwt(j -> j.subject("user-123"))).with(csrf()))
                 .andExpect(status().isUnsupportedMediaType());
     }
 
     @Test
-    @WithMockUser
     void upload_oversizeFile_returns413() throws Exception {
         // GIVEN service throws 413 for a file exceeding 2 MB
-        given(documentService.upload(any()))
+        given(documentService.upload(any(), any()))
                 .willThrow(new ResponseStatusException(HttpStatus.PAYLOAD_TOO_LARGE));
 
         byte[] oversizeBytes = new byte[2 * 1024 * 1024 + 1];
         MockMultipartFile file = new MockMultipartFile(
                 "file", "large.txt", "text/plain", oversizeBytes);
 
-        // WHEN POST /api/documents with an oversize file
+        // WHEN POST /api/documents with an oversize file and valid JWT
         // THEN 413 Payload Too Large
-        mockMvc.perform(multipart("/api/documents").file(file).with(csrf()))
+        mockMvc.perform(multipart("/api/documents").file(file).with(jwt().jwt(j -> j.subject("user-123"))).with(csrf()))
                 .andExpect(status().isPayloadTooLarge());
     }
 
     @Test
-    @WithMockUser
     void upload_emptyFile_returns400() throws Exception {
         // GIVEN service throws 400 for an empty file
-        given(documentService.upload(any()))
+        given(documentService.upload(any(), any()))
                 .willThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST));
 
         MockMultipartFile file = new MockMultipartFile(
                 "file", "empty.txt", "text/plain", new byte[0]);
 
-        // WHEN POST /api/documents with a zero-byte file
+        // WHEN POST /api/documents with a zero-byte file and valid JWT
         // THEN 400 Bad Request
-        mockMvc.perform(multipart("/api/documents").file(file).with(csrf()))
+        mockMvc.perform(multipart("/api/documents").file(file).with(jwt().jwt(j -> j.subject("user-123"))).with(csrf()))
                 .andExpect(status().isBadRequest());
     }
 
@@ -129,5 +125,25 @@ class DocumentControllerTest {
         // THEN 401 Unauthorized or 403 Forbidden
         mockMvc.perform(multipart("/api/documents").file(file).with(csrf()))
                 .andExpect(status().is(Matchers.either(Matchers.is(401)).or(Matchers.is(403))));
+    }
+
+    // ---------------------------------------------------------------------------
+    // Ingestion failure — service propagates RuntimeException → 500
+    // ---------------------------------------------------------------------------
+
+    @Test
+    void upload_ingestionFailure_returns500() throws Exception {
+        // GIVEN the embedding service is unavailable and upload throws
+        given(documentService.upload(any(), any()))
+                .willThrow(new RuntimeException("embedding service unavailable"));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "doc.txt", "text/plain", "content".getBytes());
+
+        // WHEN POST /api/documents with a valid JWT
+        // THEN ProblemDetailControllerAdvice returns 500 with a generic message
+        mockMvc.perform(multipart("/api/documents").file(file)
+                        .with(jwt().jwt(j -> j.subject("user-123"))).with(csrf()))
+                .andExpect(status().isInternalServerError());
     }
 }
