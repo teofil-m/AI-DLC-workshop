@@ -1,5 +1,7 @@
 package com.ai_dlc.workshop.ai;
 
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 import org.springframework.ai.vectorstore.SimpleVectorStore;
@@ -48,6 +50,15 @@ public class AiConfig {
                 .withMaxNumChunks(10000)
                 .withKeepSeparator(true)
                 .build();
+    }
+
+    /**
+     * Stateless {@link ChatClient} used by {@link com.ai_dlc.workshop.chat.ChatService}.
+     * Built from the auto-configured {@link ChatModel} provided by the OpenAI starter.
+     */
+    @Bean
+    public ChatClient chatClient(ChatModel chatModel) {
+        return ChatClient.builder(chatModel).build();
     }
 
     /**
