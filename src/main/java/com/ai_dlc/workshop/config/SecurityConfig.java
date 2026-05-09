@@ -1,6 +1,5 @@
 package com.ai_dlc.workshop.config;
 
-import java.util.Arrays;
 import java.util.List;
 
 import javax.crypto.SecretKey;
@@ -52,7 +51,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers("/actuator/health", "/actuator/info").permitAll();
                 // H2 console, chat UI, and chat API permitted in non-prod only
-                if (!Arrays.asList(env.getActiveProfiles()).contains("prod")) {
+                if (!env.matchesProfiles("prod")) {
                     auth.requestMatchers("/h2-console/**").permitAll();
                     // Chat page and SSE endpoint are open in dev/test — no JWT required
                     auth.requestMatchers("/chat", "/api/chat/**").permitAll();

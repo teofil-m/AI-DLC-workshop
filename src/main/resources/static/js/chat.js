@@ -18,6 +18,8 @@
 
     // Accumulated raw SSE buffer across chunks (handles chunk boundaries mid-line)
     let sseBuffer = '';
+    // AbortController for the active stream — cancelled on new request or page unload
+    let activeController = null;
 
     /**
      * Parse lines from an SSE chunk and return an array of token strings.
@@ -26,7 +28,9 @@
      */
     function parseSseTokens(chunk) {
         sseBuffer += chunk;
-        const lines = sseBuffer.split('\n');
+        // Normalise all SSE-legal line endings (\r\n, \r, \n) to \n before splitting
+        const normalised = sseBuffer.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const lines = normalised.split('\n');
         // Keep the last potentially incomplete line back in the buffer
         sseBuffer = lines.pop();
 
@@ -79,7 +83,7 @@
         citations.forEach(function (c) {
             const li = document.createElement('li');
             li.className = 'citations__item';
-            const name = c.fileName || c.source || c.docId || JSON.stringify(c);
+            const name = c.source || c.docId || JSON.stringify(c);
             li.textContent = name;
             if (c.docId) {
                 const small = document.createElement('small');
@@ -114,9 +118,15 @@
 
         const token = tokenEl ? tokenEl.value.trim() : '';
 
+        // Cancel any in-flight stream before starting a new one
+        if (activeController) activeController.abort();
+        activeController = new AbortController();
+
         // Reset UI
         answerEl.textContent = '';
-        citationsEl.innerHTML = '';
+        // Silence aria-live during streaming to avoid announcing every token
+        answerEl.setAttribute('aria-live', 'off');
+        citationsEl.replaceChildren();
         citationsEl.hidden = true;
         sseBuffer = '';
         setStatus('');
@@ -131,10 +141,10 @@
         let fullAnswer = '';
 
         try {
-            const response = await fetch(url, { headers: headers });
+            const response = await fetch(url, { headers: headers, signal: activeController.signal });
 
             if (!response.ok) {
-                throw new Error('HTTP ' + response.status + ': ' + response.statusText);
+                throw new Error('HTTP ' + response.status + ': ' + (response.statusText || 'Unknown error'));
             }
 
             const reader = response.body.getReader();
@@ -165,7 +175,10 @@
                 }
             }
 
-            // Post-stream: extract and render citations if embedded in answer
+            // Post-stream: re-enable aria-live so assistive tech announces the final answer
+            answerEl.setAttribute('aria-live', 'polite');
+
+            // Extract and render citations if embedded in answer
             const { answer, citations } = extractCitations(fullAnswer);
             if (citations.length > 0) {
                 answerEl.textContent = answer;
@@ -174,12 +187,21 @@
             setStatus('');
 
         } catch (err) {
-            console.error('[chat.js] Stream error:', err);
-            setStatus('Error: ' + err.message, true);
+            if (err.name !== 'AbortError') {
+                console.error('[chat.js] Stream error:', err);
+                setStatus('Error: ' + err.message, true);
+            }
         } finally {
+            answerEl.setAttribute('aria-live', 'polite');
             setLoading(false);
+            activeController = null;
         }
     }
+
+    // Cancel active stream on page unload so the server-side Flux is released immediately
+    window.addEventListener('beforeunload', function () {
+        if (activeController) activeController.abort();
+    });
 
     // Wire up events once DOM is ready
     sendBtn.addEventListener('click', startStream);

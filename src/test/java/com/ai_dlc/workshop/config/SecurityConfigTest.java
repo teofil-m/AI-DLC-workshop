@@ -60,4 +60,25 @@ class SecurityConfigTest {
         mockMvc.perform(get("/actuator/health"))
                 .andExpect(status().isOk());
     }
+
+    @Test
+    void chatPage_noAuth_testProfile_returns200() throws Exception {
+        // GIVEN no authentication and the test profile (non-prod)
+        // WHEN GET /chat
+        // THEN 200 OK — /chat is permitted in non-prod to allow the dev demo
+        mockMvc.perform(get("/chat"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void chatStreamApi_noAuth_testProfile_returnsNot401() throws Exception {
+        // GIVEN no authentication and the test profile (non-prod)
+        // WHEN GET /api/chat/stream
+        // THEN not 401/403 — the route is open in non-prod; 400/other is acceptable (missing param etc.)
+        mockMvc.perform(get("/api/chat/stream"))
+                .andExpect(status().is(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.anyOf(
+                                org.hamcrest.Matchers.is(401),
+                                org.hamcrest.Matchers.is(403)))));
+    }
 }
