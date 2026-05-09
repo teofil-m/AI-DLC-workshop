@@ -11,31 +11,33 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+import reactor.core.publisher.Flux;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
 /**
- * Synchronous RAG chat service.
+ * Non-blocking RAG streaming chat service.
  *
  * <p>Pipeline:
  * <ol>
- *   <li>Retrieve top-K document chunks scoped to the authenticated user from {@link VectorStore}.</li>
+ *   <li>Retrieve top-K document chunks scoped to the authenticated user from {@link VectorStore}
+ *       (blocking call — acceptable because retrieval is a fast, bounded I/O operation).</li>
  *   <li>Format retrieved chunks into a context block.</li>
- *   <li>Render the {@code rag-chat.st} prompt template with {question} and {context}.</li>
- *   <li>Call the LLM via {@link ChatClient} and return the answer with citations.</li>
+ *   <li>Render the {@code rag-chat.st} prompt template with {context} and {question}.</li>
+ *   <li>Stream LLM response tokens via {@link ChatClient} — returns {@link Flux}{@literal <}String{@literal >}.</li>
  * </ol>
  *
- * <p>Token cost: each call issues 1 embedding query (retrieval) + 1 chat completion.
+ * <p>Token cost: each call issues 1 embedding query (retrieval) + 1 streaming chat completion.
  * Context size scales with top-K * avg chunk size. Default top-K=4.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class ChatService {
+public class StreamingChatService {
 
     private static final String PROMPT_TEMPLATE_PATH = "prompts/rag-chat.st";
     // Allowlist for userId used in filter expression — prevents metadata injection
@@ -59,19 +61,24 @@ public class ChatService {
     }
 
     /**
-     * Answers {@code question} using RAG: retrieves the caller's relevant chunks and calls the LLM.
+     * Streams an LLM answer to {@code question} using RAG, emitting tokens as they arrive.
+     *
+     * <p>The vector store retrieval is synchronous and completes before the streaming chat call
+     * is initiated. Streaming then begins immediately and each token is emitted as a
+     * {@link Flux} element, which Spring WebFlux serialises as an SSE {@code data:} frame.
      *
      * @param question sanitised user question (must not be blank)
      * @param userId   the authenticated user's subject claim — scopes the vector store search
-     * @return the generated answer together with citation metadata
+     * @return a {@link Flux} of token strings; the stream completes when the LLM finishes
      */
-    public ChatResponse chat(String question, String userId) {
+    public Flux<String> stream(String question, String userId) {
         if (!SAFE_USER_ID.matcher(userId).matches()) {
             throw new IllegalArgumentException("Invalid userId format in JWT sub claim");
         }
-        log.debug("RAG chat request received for userId={}", userId);
+        log.debug("RAG streaming chat request received for userId={}", userId);
 
-        // 1. Retrieve relevant documents scoped to this user — prevents cross-user data leakage
+        // 1. Retrieve relevant documents scoped to this user — prevents cross-user data leakage.
+        //    Blocking call is acceptable here: retrieval is bounded and fast relative to LLM latency.
         SearchRequest searchRequest = SearchRequest.builder()
                 .query(question)
                 .topK(topK)
@@ -91,35 +98,23 @@ public class ChatService {
                         .collect(java.util.stream.Collectors.joining("\n\n---\n\n"));
 
         // 3. Render prompt — substitute {context} first so any literal "{question}" in chunk
-        //    text is never matched by the second replacement
+        //    text is never matched by the second replacement (prompt-injection defence)
         String renderedPrompt = promptTemplate
                 .replace("{context}", context)
                 .replace("{question}", sanitise(question));
 
-        // 4. Call the LLM synchronously; guard against content-filtered null response
-        String raw = chatClient.prompt()
+        // 4. Call the LLM in streaming mode — returns Flux<String> of token chunks.
+        //    Timeout bounds runaway connections; onErrorResume signals error to client
+        //    rather than silently dropping the stream mid-response.
+        return chatClient.prompt()
                 .user(renderedPrompt)
-                .call()
-                .content();
-        String answer = raw != null ? raw : "";
-
-        // 5. Map retrieved documents to CitationDtos
-        List<CitationDto> citations = relevantDocs.stream()
-                .map(doc -> toCitation(doc.getMetadata()))
-                .toList();
-
-        return new ChatResponse(answer, citations);
-    }
-
-    private CitationDto toCitation(Map<String, Object> metadata) {
-        String source = objectToString(metadata.get(MetadataKeys.SOURCE));
-        String docId = objectToString(metadata.get(MetadataKeys.DOC_ID));
-        String chunkIndex = objectToString(metadata.get(MetadataKeys.CHUNK_INDEX));
-        return new CitationDto(source, docId, chunkIndex);
-    }
-
-    private static String objectToString(Object value) {
-        return value != null ? value.toString() : null;
+                .stream()
+                .content()
+                .timeout(Duration.ofSeconds(60))
+                .onErrorResume(ex -> {
+                    log.error("Streaming LLM call failed for userId={}", userId, ex);
+                    return Flux.just("[ERROR: response generation failed]");
+                });
     }
 
     private String loadPromptTemplate() {
@@ -135,8 +130,7 @@ public class ChatService {
     /**
      * Minimal prompt-injection defence: strips null and trims surrounding whitespace.
      * Placeholder re-injection from user input is impossible because {context} is
-     * substituted before {question} — stored chunk text containing "{question}" cannot
-     * reach the question substitution site.
+     * substituted before {question}.
      */
     private static String sanitise(String input) {
         if (input == null) {
