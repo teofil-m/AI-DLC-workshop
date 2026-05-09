@@ -47,9 +47,12 @@ public class StreamingChatController {
             @RequestParam String question,
             @AuthenticationPrincipal Jwt jwt) {
 
-        if (jwt == null || jwt.getSubject() == null || jwt.getSubject().isBlank()) {
-            throw new ResponseStatusException(BAD_REQUEST, "JWT must contain a sub claim");
-        }
+        // In non-prod the endpoint is permitted without auth — fall back to "anonymous"
+        // so the open demo route works. In prod the filter chain enforces JWT before this runs.
+        String userId = (jwt != null && jwt.getSubject() != null && !jwt.getSubject().isBlank())
+                ? jwt.getSubject()
+                : "anonymous";
+
         if (question == null || question.isBlank()) {
             throw new ResponseStatusException(BAD_REQUEST, "question must not be blank");
         }
@@ -57,7 +60,6 @@ public class StreamingChatController {
             throw new ResponseStatusException(BAD_REQUEST, "question must not exceed 2000 characters");
         }
 
-        String userId = jwt.getSubject();
         log.debug("SSE stream request for userId={}", userId);
 
         return streamingChatService.stream(question, userId);
