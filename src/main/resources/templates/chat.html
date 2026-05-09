@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<!--
+  chat.html — RAG Chat Demo
+  Served by ChatPageController at GET /chat.
+  Permitted anonymously in non-prod profiles (see SecurityConfig).
+  JavaScript streaming is handled by /static/js/chat.js.
+-->
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAG Chat Demo</title>
+    <style>
+        /* =====================================================================
+           Base reset & variables
+           ===================================================================== */
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --color-bg:          #f5f7fa;
+            --color-surface:     #ffffff;
+            --color-border:      #d0d7de;
+            --color-primary:     #2563eb;
+            --color-primary-h:   #1d4ed8;
+            --color-primary-dis: #93c5fd;
+            --color-text:        #1e293b;
+            --color-text-muted:  #64748b;
+            --color-error:       #dc2626;
+            --color-answer-bg:   #f8fafc;
+            --radius:            8px;
+            --shadow:            0 1px 3px rgba(0,0,0,.1), 0 1px 2px rgba(0,0,0,.06);
+            --font-sans:         system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            --font-mono:         "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            background: var(--color-bg);
+            color: var(--color-text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 1.5rem 1rem;
+        }
+
+        /* =====================================================================
+           Page header
+           ===================================================================== */
+        .page-header {
+            width: 100%;
+            max-width: 800px;
+            margin-bottom: 1.5rem;
+        }
+
+        .page-header__title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: var(--color-text);
+        }
+
+        .page-header__subtitle {
+            font-size: 0.95rem;
+            color: var(--color-text-muted);
+            margin-top: 0.25rem;
+        }
+
+        /* =====================================================================
+           Chat card
+           ===================================================================== */
+        .chat {
+            width: 100%;
+            max-width: 800px;
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        /* =====================================================================
+           Form fields
+           ===================================================================== */
+        .chat__field {
+            display: flex;
+            flex-direction: column;
+            gap: 0.375rem;
+        }
+
+        .chat__label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--color-text);
+        }
+
+        .chat__label--optional {
+            font-weight: 400;
+            color: var(--color-text-muted);
+        }
+
+        .chat__textarea,
+        .chat__input {
+            width: 100%;
+            border: 1px solid var(--color-border);
+            border-radius: calc(var(--radius) / 2);
+            padding: 0.625rem 0.75rem;
+            font-family: var(--font-sans);
+            font-size: 1rem;
+            color: var(--color-text);
+            background: var(--color-surface);
+            transition: border-color 0.15s, box-shadow 0.15s;
+            resize: vertical;
+        }
+
+        .chat__textarea:focus,
+        .chat__input:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 0 3px rgba(37,99,235,.15);
+        }
+
+        .chat__textarea:disabled,
+        .chat__input:disabled {
+            background: var(--color-bg);
+            color: var(--color-text-muted);
+            cursor: not-allowed;
+        }
+
+        .chat__textarea {
+            min-height: 100px;
+        }
+
+        .chat__hint {
+            font-size: 0.8rem;
+            color: var(--color-text-muted);
+        }
+
+        /* =====================================================================
+           Send button
+           ===================================================================== */
+        .chat__actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .btn--primary {
+            background: var(--color-primary);
+            color: #fff;
+            border: none;
+            border-radius: calc(var(--radius) / 2);
+            padding: 0.625rem 1.25rem;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .btn--primary:hover:not(:disabled) {
+            background: var(--color-primary-h);
+        }
+
+        .btn--primary:disabled {
+            background: var(--color-primary-dis);
+            cursor: not-allowed;
+        }
+
+        /* Simple CSS spinner shown via aria-busy */
+        .btn--primary[aria-busy="true"]::before {
+            content: '';
+            display: inline-block;
+            width: 0.9em;
+            height: 0.9em;
+            border: 2px solid rgba(255,255,255,.4);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* =====================================================================
+           Status message
+           ===================================================================== */
+        .chat__status {
+            font-size: 0.875rem;
+            color: var(--color-text-muted);
+            min-height: 1.25rem;
+        }
+
+        .chat__status--error {
+            color: var(--color-error);
+            font-weight: 600;
+        }
+
+        /* =====================================================================
+           Answer area
+           ===================================================================== */
+        .chat__answer-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .chat__answer-label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--color-text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .chat__answer {
+            background: var(--color-answer-bg);
+            border: 1px solid var(--color-border);
+            border-radius: calc(var(--radius) / 2);
+            padding: 1rem;
+            font-size: 1rem;
+            line-height: 1.65;
+            min-height: 5rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-y: auto;
+            max-height: 400px;
+            color: var(--color-text);
+        }
+
+        /* =====================================================================
+           Citations
+           ===================================================================== */
+        .chat__citations {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: calc(var(--radius) / 2);
+            padding: 0.875rem 1rem;
+        }
+
+        .chat__citations h3 {
+            font-size: 0.875rem;
+            font-weight: 700;
+            color: #1d4ed8;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .citations__list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+            padding-left: 0;
+        }
+
+        .citations__item {
+            font-size: 0.875rem;
+            color: var(--color-text);
+            padding: 0.25rem 0;
+            border-bottom: 1px solid #dbeafe;
+            display: flex;
+            align-items: baseline;
+            gap: 0.4rem;
+        }
+
+        .citations__item:last-child {
+            border-bottom: none;
+        }
+
+        .citations__doc-id {
+            color: var(--color-text-muted);
+            font-family: var(--font-mono);
+            font-size: 0.8em;
+        }
+
+        /* =====================================================================
+           Responsive adjustments (mobile-first: above rules are mobile)
+           ===================================================================== */
+        @media (min-width: 640px) {
+            .chat {
+                padding: 2rem;
+            }
+
+            .page-header__title {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <header class="page-header" role="banner">
+        <h1 class="page-header__title">RAG Chat Demo</h1>
+        <p class="page-header__subtitle">Ask a question — the answer streams token by token from the knowledge base.</p>
+    </header>
+
+    <main class="chat" role="main" aria-label="Chat interface">
+
+        <!-- Question input -->
+        <div class="chat__field">
+            <label class="chat__label" for="question">Your question</label>
+            <textarea
+                id="question"
+                name="question"
+                class="chat__textarea"
+                rows="3"
+                placeholder="e.g. What are the key topics covered in the uploaded documents?"
+                aria-describedby="question-hint"
+                autocomplete="off"
+                spellcheck="true"
+            ></textarea>
+            <span id="question-hint" class="chat__hint">Press Ctrl+Enter (or Cmd+Enter) to send.</span>
+        </div>
+
+        <!-- Dev token input — visible only in non-prod for demo purposes.
+             The token is passed as a Bearer header via fetch(), not as a cookie. -->
+        <div class="chat__field">
+            <label class="chat__label" for="token">
+                Bearer token
+                <span class="chat__label--optional">(dev only)</span>
+            </label>
+            <input
+                id="token"
+                type="password"
+                name="token"
+                class="chat__input"
+                placeholder="Paste your JWT here (leave blank if endpoint is open)"
+                aria-describedby="token-hint"
+                autocomplete="off"
+            />
+            <span id="token-hint" class="chat__hint">
+                In non-prod, <code>/api/chat/**</code> is permitted without a token.
+                Paste a JWT here when testing against a secured environment.
+            </span>
+        </div>
+
+        <!-- Submit -->
+        <div class="chat__actions">
+            <button
+                id="send-btn"
+                type="button"
+                class="btn--primary"
+                aria-label="Send question and stream answer"
+                aria-busy="false"
+            >
+                Send
+            </button>
+        </div>
+
+        <!-- Status / error message -->
+        <p
+            id="status"
+            class="chat__status"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            hidden
+        ></p>
+
+        <!-- Streaming answer -->
+        <section class="chat__answer-section" aria-label="Answer">
+            <span class="chat__answer-label" aria-hidden="true">Answer</span>
+            <div
+                id="answer"
+                class="chat__answer"
+                role="region"
+                aria-label="Streaming answer"
+                aria-live="polite"
+                aria-atomic="false"
+            ></div>
+        </section>
+
+        <!-- Citations — hidden until populated by JS -->
+        <aside
+            id="citations"
+            class="chat__citations"
+            role="complementary"
+            aria-label="Source citations"
+            hidden
+        ></aside>
+
+    </main>
+
+    <!--
+      th:src="@{/js/chat.js}" ensures the URL survives context-path changes.
+      defer keeps it non-blocking; the IIFE inside also waits for DOMContentLoaded.
+    -->
+    <script th:src="@{/js/chat.js}" defer></script>
+
+</body>
+</html>

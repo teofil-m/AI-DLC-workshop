@@ -51,9 +51,11 @@ public class SecurityConfig {
             .headers(h -> h.frameOptions(fo -> fo.sameOrigin()))
             .authorizeHttpRequests(auth -> {
                 auth.requestMatchers("/actuator/health", "/actuator/info").permitAll();
-                // H2 console permitted in non-prod only — H2 is on classpath in all envs
+                // H2 console, chat UI, and chat API permitted in non-prod only
                 if (!Arrays.asList(env.getActiveProfiles()).contains("prod")) {
                     auth.requestMatchers("/h2-console/**").permitAll();
+                    // Chat page and SSE endpoint are open in dev/test — no JWT required
+                    auth.requestMatchers("/chat", "/api/chat/**").permitAll();
                 }
                 auth.anyRequest().authenticated();
             })
